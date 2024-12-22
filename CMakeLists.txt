@@ -19,15 +19,14 @@ message("Setting ${KEY}, ${VALUE}")
 endforeach()
 
 
-# set(VULKAN_SDK "/Users/matthew/VulkanSDK/1.3.296.0/macOS/")
 find_library(VULKAN_LIB Vulkan PATHS ${VULKAN_SDK}/lib REQUIRED)
 set(VULKAN_INCLUDE_DIR ${VULKAN_SDK}/include)
 message(${VULKAN_INCLUDE_DIR})
 
 # Source files
-file(GLOB_RECURSE C_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp")
+file(GLOB_RECURSE CPP_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp" "${CMAKE_SOURCE_DIR}/src/*/*.cpp")
 
-# Vulkan settings
+# Vulkan settings - Mainly for MacOS
 set(VK_ICD_FILENAMES ${VULKAN_SDK}/share/vulkan/icd.d/MoltenVK_icd.json)
 set(LDFLAGS "-Wl,-rpath,${VULKAN_SDK}/lib/")
 
@@ -50,12 +49,13 @@ set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(glfw)
 
 # Add executable
-add_executable(${APP_NAME} ${C_FILES})
+add_executable(${APP_NAME} ${CPP_FILES})
 
 # Include directories
 target_include_directories(${APP_NAME} PRIVATE
     ${VULKAN_INCLUDE_DIR}
     ${glfw_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 # Link libraries
