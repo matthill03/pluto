@@ -1,5 +1,3 @@
-#include "vulkan/vulkan_core.h"
-#include <cstdint>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <iostream>
@@ -51,6 +49,9 @@ private:
     VkDebugUtilsMessengerEXT m_debug_messenger;
 
     VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
+    VkDevice m_device;
+
+    VkQueue m_graphics_queue;
 
     std::vector<const char *> get_required_extenstions() {
         uint32_t required_extension_count = 0;
@@ -118,6 +119,42 @@ private:
         create_instance();
         setup_debug_messenger();
         pick_physical_device();
+        create_logical_device();
+    }
+
+    void create_logical_device() {
+        QueueFamiliyIndicies indicies = find_queue_families(m_physical_device);
+
+        float queue_priority = 1.0f;
+        VkDeviceQueueCreateInfo queue_create_info = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = indicies.graphics_familiy.value(),
+            .queueCount = 1,
+            .pQueuePriorities = &queue_priority,
+        };
+
+        VkPhysicalDeviceFeatures device_features = {};
+
+        VkDeviceCreateInfo device_create_info = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .queueCreateInfoCount = 1,
+            .pQueueCreateInfos = &queue_create_info,
+            .enabledExtensionCount = 0,
+            .pEnabledFeatures = &device_features,
+        };
+
+        if (DEBUG) {
+            device_create_info.enabledLayerCount = (uint32_t)validation_layers.size();
+            device_create_info.ppEnabledLayerNames = validation_layers.data();
+        } else {
+            device_create_info.enabledLayerCount = 0;
+        }
+
+        if (vkCreateDevice(m_physical_device, &device_create_info, nullptr, &m_device) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create logical device");
+        }
+
+        vkGetDeviceQueue(m_device, indicies.graphics_familiy.value(), 0, &m_graphics_queue);
     }
 
     QueueFamiliyIndicies find_queue_families(VkPhysicalDevice device) {
@@ -238,6 +275,7 @@ private:
             destroy_debug_utils_messenger_ext(m_instance, m_debug_messenger, nullptr);
         }
 
+        vkDestroyDevice(m_device, nullptr);
         vkDestroyInstance(m_instance, nullptr);
         glfwDestroyWindow(m_window);
         glfwTerminate();
