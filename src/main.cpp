@@ -1,10 +1,10 @@
-#include "vulkan/vk_platform.h"
 #include "vulkan/vulkan_core.h"
 #include <cstdint>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <vector>
+#include <optional>
 #include <stdexcept>
 
 const uint32_t WINDOW_WIDTH = 800;
@@ -33,6 +33,14 @@ void destroy_debug_utils_messenger_ext(VkInstance instance, VkDebugUtilsMessenge
     }
 }
 
+typedef struct QueueFamiliyIndicies {
+    std::optional<uint32_t> graphics_familiy;
+
+    bool is_complete() {
+        return graphics_familiy.has_value();
+    }
+} QueueFamiliyIndicies;
+
 class HelloEngine {
 
 private:
@@ -41,6 +49,8 @@ private:
     VkInstance m_instance;
 
     VkDebugUtilsMessengerEXT m_debug_messenger;
+
+    VkPhysicalDevice m_physical_device = VK_NULL_HANDLE;
 
     std::vector<const char *> get_required_extenstions() {
         uint32_t required_extension_count = 0;
@@ -58,22 +68,7 @@ private:
         return required_extensions;
     }
 
-    void init_window() {
-        if (!glfwInit()) {
-            throw std::runtime_error("Failed to initialize GLFW");
-        }
-
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        m_window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Vulkan Window", nullptr, nullptr);
-
-        if (!m_window) {
-            glfwTerminate();
-            throw std::runtime_error("Failed to create window");
-        }
-
-    }
-
-    void init_vulkan() {
+    void create_instance() {
         if (DEBUG && !check_validation_layer_support()) {
             throw std::runtime_error("Validation layers requested, but not available!");
         }
@@ -102,8 +97,86 @@ private:
         if (vkCreateInstance(&create_info, nullptr, &m_instance) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create vulkan instance");
         }
+    }
 
+    void init_window() {
+        if (!glfwInit()) {
+            throw std::runtime_error("Failed to initialize GLFW");
+        }
+
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        m_window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Vulkan Window", nullptr, nullptr);
+
+        if (!m_window) {
+            glfwTerminate();
+            throw std::runtime_error("Failed to create window");
+        }
+
+    }
+
+    void init_vulkan() {
+        create_instance();
         setup_debug_messenger();
+        pick_physical_device();
+    }
+
+    QueueFamiliyIndicies find_queue_families(VkPhysicalDevice device) {
+        QueueFamiliyIndicies indicies;
+        uint32_t queue_family_count = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, nullptr);
+
+        std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.data());
+
+        for (int i = 0; i < queue_families.size(); i++) {
+            if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                indicies.graphics_familiy = i;
+            }
+
+            if (indicies.is_complete()) {
+                break;
+            }
+        }
+
+        return indicies;
+    }
+
+    void pick_physical_device() {
+        uint32_t device_count = 0;
+        vkEnumeratePhysicalDevices(m_instance, &device_count, nullptr);
+
+        if (device_count == 0) {
+            throw std::runtime_error("Failed to find GPUs with Vulkan support");
+        }
+
+        std::vector<VkPhysicalDevice> physical_devices(device_count);
+        vkEnumeratePhysicalDevices(m_instance, &device_count, physical_devices.data());
+
+        for (const auto& device : physical_devices) {
+            if (is_device_suitable(device)) {
+                m_physical_device = device;
+                break;
+            }
+        }
+
+        if (m_physical_device == VK_NULL_HANDLE) {
+            throw std::runtime_error("Failed to find a suitable physical device");
+        }
+    }
+
+    bool is_device_suitable(VkPhysicalDevice device) {
+        VkPhysicalDeviceProperties device_properties;
+        vkGetPhysicalDeviceProperties(device, &device_properties);
+
+        VkPhysicalDeviceFeatures device_features;
+        vkGetPhysicalDeviceFeatures(device, &device_features);
+
+        std::cout << device_properties.deviceName << "\n";
+        std::cout << device_properties.deviceType << "\n";
+
+        QueueFamiliyIndicies queue_family_indicies = find_queue_families(device);
+
+        return queue_family_indicies.is_complete();
     }
 
     void populate_debug_messenger(VkDebugUtilsMessengerCreateInfoEXT& create_info) {
