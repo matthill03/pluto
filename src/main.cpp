@@ -1,8 +1,10 @@
+#include <cstdint>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <vector>
 #include <optional>
+#include <set>
 #include <stdexcept>
 
 const uint32_t WINDOW_WIDTH = 800;
@@ -32,10 +34,11 @@ void destroy_debug_utils_messenger_ext(VkInstance instance, VkDebugUtilsMessenge
 }
 
 typedef struct QueueFamiliyIndicies {
-    std::optional<uint32_t> graphics_familiy;
+    std::optional<uint32_t> graphics_family;
+    std::optional<uint32_t> present_family;
 
     bool is_complete() {
-        return graphics_familiy.has_value();
+        return graphics_family.has_value() && present_family.has_value();
     }
 } QueueFamiliyIndicies;
 
@@ -52,6 +55,9 @@ private:
     VkDevice m_device;
 
     VkQueue m_graphics_queue;
+    VkQueue m_present_queue;
+
+    VkSurfaceKHR m_surface;
 
     std::vector<const char *> get_required_extenstions() {
         uint32_t required_extension_count = 0;
@@ -115,9 +121,16 @@ private:
 
     }
 
+    void create_surface() {
+        if(glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_surface) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create window surface");
+        }
+    }
+
     void init_vulkan() {
         create_instance();
         setup_debug_messenger();
+        create_surface();
         pick_physical_device();
         create_logical_device();
     }
@@ -125,20 +138,26 @@ private:
     void create_logical_device() {
         QueueFamiliyIndicies indicies = find_queue_families(m_physical_device);
 
+        std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+        std::set<uint32_t> unique_queue_families = {indicies.graphics_family.value(), indicies.present_family.value()};
+
         float queue_priority = 1.0f;
-        VkDeviceQueueCreateInfo queue_create_info = {
-            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = indicies.graphics_familiy.value(),
-            .queueCount = 1,
-            .pQueuePriorities = &queue_priority,
-        };
+        for (uint32_t family : unique_queue_families) {
+            VkDeviceQueueCreateInfo queue_create_info = {
+                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueFamilyIndex = family,
+                .queueCount = 1,
+                .pQueuePriorities = &queue_priority,
+            };
+            queue_create_infos.push_back(queue_create_info);
+        }
 
         VkPhysicalDeviceFeatures device_features = {};
 
         VkDeviceCreateInfo device_create_info = {
             .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .queueCreateInfoCount = 1,
-            .pQueueCreateInfos = &queue_create_info,
+            .queueCreateInfoCount = (uint32_t)queue_create_infos.size(),
+            .pQueueCreateInfos = queue_create_infos.data(),
             .enabledExtensionCount = 0,
             .pEnabledFeatures = &device_features,
         };
@@ -154,20 +173,29 @@ private:
             throw std::runtime_error("Failed to create logical device");
         }
 
-        vkGetDeviceQueue(m_device, indicies.graphics_familiy.value(), 0, &m_graphics_queue);
+        vkGetDeviceQueue(m_device, indicies.graphics_family.value(), 0, &m_graphics_queue);
+        vkGetDeviceQueue(m_device, indicies.present_family.value(), 0, &m_present_queue);
     }
 
     QueueFamiliyIndicies find_queue_families(VkPhysicalDevice device) {
         QueueFamiliyIndicies indicies;
+
         uint32_t queue_family_count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, nullptr);
 
         std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.data());
 
+        VkBool32 present_support = false;
         for (int i = 0; i < queue_families.size(); i++) {
             if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                indicies.graphics_familiy = i;
+                indicies.graphics_family = i;
+            }
+
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &present_support);
+
+            if (present_support) {
+                indicies.present_family = i;
             }
 
             if (indicies.is_complete()) {
@@ -276,6 +304,7 @@ private:
         }
 
         vkDestroyDevice(m_device, nullptr);
+        vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
         vkDestroyInstance(m_instance, nullptr);
         glfwDestroyWindow(m_window);
         glfwTerminate();
