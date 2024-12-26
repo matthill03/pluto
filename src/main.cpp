@@ -74,6 +74,7 @@ private:
 
     VkSwapchainKHR m_swapchain;
     std::vector<VkImage> m_swapchain_images;
+    std::vector<VkImageView> m_swapchain_image_views;
     VkFormat m_swapchain_format;
     VkExtent2D m_swapchain_extent;
 
@@ -145,6 +146,37 @@ private:
         }
     }
 
+    void create_swapchain_image_views() {
+        m_swapchain_image_views.resize(m_swapchain_images.size());
+
+        for (size_t i = 0; i < m_swapchain_images.size(); i++) {
+            VkImageViewCreateInfo create_info = {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image = m_swapchain_images[i],
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format = m_swapchain_format,
+                .components = {
+                    .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+                },
+                .subresourceRange = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                }
+            };
+
+            if (vkCreateImageView(m_device, &create_info, nullptr, &m_swapchain_image_views[i]) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create image view");
+            }
+
+        }
+    }
+
     void init_vulkan() {
         create_instance();
         setup_debug_messenger();
@@ -152,6 +184,7 @@ private:
         pick_physical_device();
         create_logical_device();
         create_swapchain();
+        create_swapchain_image_views();
     }
 
     void create_swapchain() {
@@ -449,6 +482,11 @@ private:
     }
 
     void cleanup() {
+
+        for (auto image_view : m_swapchain_image_views) {
+            vkDestroyImageView(m_device, image_view, nullptr);
+        }
+
         vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
 
         if (DEBUG) {
